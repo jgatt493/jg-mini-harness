@@ -18,7 +18,21 @@ The skill description in CLAUDE.md and frontmatter should be written to match th
 
 Single file: `skills/write-tdd.md`
 
-Registered in `CLAUDE.md` so Claude Code can discover and auto-invoke it.
+### Frontmatter
+
+```yaml
+---
+name: write-tdd
+description: Write TDD test specs for the mini harness. Use when the user wants to create, edit, or manage test specifications in the TDD/ directory — triggered by phrases like "write TDD tests", "add test specs", "I need tests for X", or when the user provides a list of test ideas.
+---
+```
+
+### CLAUDE.md Registration
+
+```markdown
+## Skills
+- skills/write-tdd.md — Write TDD test specs for the harness (auto-triggered when writing tests)
+```
 
 ## Workflow
 
@@ -64,7 +78,7 @@ Test names should be kebab-case directory names (e.g. `auth-login`, `parse-csv-h
 Each `spec.md` is consumed by `claude -p --dangerously-skip-permissions` in headless mode. It must be self-contained — no follow-up questions possible. Each spec must include:
 
 - **What to build** — the requirement in plain language
-- **Where to put it** — file paths or enough context for Claude to decide
+- **Where to put it** — file paths inferred from existing project structure and naming conventions; when ambiguous, state the intent and let Claude decide
 - **Constraints** — what NOT to do (don't break existing functionality, don't modify unrelated code)
 - **Acceptance criteria** — what "done" looks like, aligned with the `test_cmd`
 
@@ -81,6 +95,12 @@ The test command must:
 - Exit 0 on success, non-zero on failure
 - Be a single line (first line of `test_cmd` is what the harness reads)
 - Run from the project root directory
+
+**Multi-step verification:** When a test requires multiple checks, chain them in a single `sh -c` command:
+```
+sh -c "test -f output.txt && grep -q 'hello' output.txt && wc -l output.txt | grep -q '1'"
+```
+Alternatively, point to a project test runner that covers the requirement (e.g. `go test ./pkg/auth/ -run TestLogin`).
 
 ## Duplicate Awareness
 
