@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func setupTestDir(t *testing.T) string {
@@ -86,5 +87,139 @@ func TestShouldRun(t *testing.T) {
 			t.Errorf("ShouldRun(%s, retryFailed=%v) = %v, want %v",
 				tt.status, tt.retryFail, got, tt.shouldRun)
 		}
+	}
+}
+
+func TestRun_AllPass(t *testing.T) {
+	dir := t.TempDir()
+	projectDir := t.TempDir()
+
+	// Create a test that will pass — test_cmd just checks a file exists
+	testDir := filepath.Join(dir, "create-file")
+	os.MkdirAll(testDir, 0o755)
+	os.WriteFile(filepath.Join(testDir, "spec.md"), []byte("create a file called hello.txt"), 0o644)
+	os.WriteFile(filepath.Join(testDir, "test_cmd"), []byte("test -f hello.txt"), 0o644)
+
+	// Pre-create the file so the test passes without Claude
+	os.WriteFile(filepath.Join(projectDir, "hello.txt"), []byte("hi"), 0o644)
+
+	cfg := RunConfig{
+		TestDir:     dir,
+		ProjectDir:  projectDir,
+		ClaudeCmd:   "echo", // no-op claude — just echo the prompt
+		MaxAttempts: 3,
+		Timeout:     30 * time.Second,
+		RetryFailed: false,
+	}
+
+	result := Run(cfg)
+	if result.Failed != 0 {
+		t.Errorf("expected 0 failures, got %d", result.Failed)
+	}
+	if result.Passed != 1 {
+		t.Errorf("expected 1 pass, got %d", result.Passed)
+	}
+
+	status, _ := ReadStatus(testDir)
+	if status != StatusPass {
+		t.Errorf("expected pass status, got %s", status)
+	}
+}
+
+func TestRun_FailExhaustsRetries(t *testing.T) {
+	dir := t.TempDir()
+	projectDir := t.TempDir()
+
+	testDir := filepath.Join(dir, "will-fail")
+	os.MkdirAll(testDir, 0o755)
+	os.WriteFile(filepath.Join(testDir, "spec.md"), []byte("do something impossible"), 0o644)
+	os.WriteFile(filepath.Join(testDir, "test_cmd"), []byte("false"), 0o644) // always fails
+
+	cfg := RunConfig{
+		TestDir:     dir,
+		ProjectDir:  projectDir,
+		ClaudeCmd:   "echo",
+		MaxAttempts: 2,
+		Timeout:     30 * time.Second,
+		RetryFailed: false,
+	}
+
+	result := Run(cfg)
+	if result.Failed != 1 {
+		t.Errorf("expected 1 failure, got %d", result.Failed)
+	}
+
+	status, _ := ReadStatus(testDir)
+	if status != StatusFail {
+		t.Errorf("expected fail status, got %s", status)
+	}
+
+	// error.md should exist
+	if _, err := os.Stat(filepath.Join(testDir, "error.md")); os.IsNotExist(err) {
+		t.Error("error.md should have been written")
+	}
+}
+
+func TestRun_SkipsPassedTests(t *testing.T) {
+	dir := t.TempDir()
+	projectDir := t.TempDir()
+
+	testDir := filepath.Join(dir, "already-done")
+	os.MkdirAll(testDir, 0o755)
+	os.WriteFile(filepath.Join(testDir, "spec.md"), []byte("anything"), 0o644)
+	os.WriteFile(filepath.Join(testDir, "test_cmd"), []byte("true"), 0o644)
+	os.WriteFile(filepath.Join(testDir, ".status"), []byte("pass\n"), 0o644)
+
+	cfg := RunConfig{
+		TestDir:     dir,
+		ProjectDir:  projectDir,
+		ClaudeCmd:   "echo",
+		MaxAttempts: 3,
+		Timeout:     30 * time.Second,
+		RetryFailed: false,
+	}
+
+	result := Run(cfg)
+	if result.Passed != 0 || result.Failed != 0 {
+		t.Errorf("expected 0/0, got passed=%d failed=%d", result.Passed, result.Failed)
+	}
+}
+
+func TestRun_RetryFailed(t *testing.T) {
+	dir := t.TempDir()
+	projectDir := t.TempDir()
+
+	testDir := filepath.Join(dir, "retry-me")
+	os.MkdirAll(testDir, 0o755)
+	os.WriteFile(filepath.Join(testDir, "spec.md"), []byte("create hello.txt"), 0o644)
+	os.WriteFile(filepath.Join(testDir, "test_cmd"), []byte("test -f hello.txt"), 0o644)
+	os.WriteFile(filepath.Join(testDir, ".status"), []byte("fail\n"), 0o644)
+	os.WriteFile(filepath.Join(testDir, "error.md"), []byte("old error"), 0o644)
+
+	// Pre-create the file so test passes this time
+	os.WriteFile(filepath.Join(projectDir, "hello.txt"), []byte("hi"), 0o644)
+
+	cfg := RunConfig{
+		TestDir:     dir,
+		ProjectDir:  projectDir,
+		ClaudeCmd:   "echo",
+		MaxAttempts: 1,
+		Timeout:     30 * time.Second,
+		RetryFailed: true,
+	}
+
+	result := Run(cfg)
+	if result.Passed != 1 {
+		t.Errorf("expected 1 pass, got %d", result.Passed)
+	}
+
+	status, _ := ReadStatus(testDir)
+	if status != StatusPass {
+		t.Errorf("expected pass status, got %s", status)
+	}
+
+	// error.md should be deleted on success
+	if _, err := os.Stat(filepath.Join(testDir, "error.md")); !os.IsNotExist(err) {
+		t.Error("error.md should have been deleted after passing")
 	}
 }

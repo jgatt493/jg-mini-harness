@@ -1,11 +1,16 @@
 package runner
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/jeremygatt/jg-mini-harness/internal/executor"
+	"github.com/jeremygatt/jg-mini-harness/internal/reporter"
 )
 
 // TestSpec represents a single test directory with its spec and command.
@@ -100,4 +105,110 @@ func ShouldRun(status Status, retryFailed bool) bool {
 	default:
 		return false
 	}
+}
+
+type RunConfig struct {
+	TestDir     string
+	ProjectDir  string
+	ClaudeCmd   string
+	MaxAttempts int
+	Timeout     time.Duration
+	RetryFailed bool
+}
+
+type RunResult struct {
+	Passed int
+	Failed int
+}
+
+func Run(cfg RunConfig) RunResult {
+	tests, err := DiscoverTests(cfg.TestDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error discovering tests: %v\n", err)
+		return RunResult{}
+	}
+
+	var result RunResult
+	total := len(tests)
+	index := 0
+
+	for _, test := range tests {
+		status, err := ReadStatus(test.Dir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading status for %s: %v\n", test.Name, err)
+			continue
+		}
+
+		if !ShouldRun(status, cfg.RetryFailed) {
+			continue
+		}
+
+		index++
+		WriteStatus(test.Dir, StatusInProgress)
+
+		passed, attempts, duration := runSingleTest(cfg, test)
+
+		if passed {
+			WriteStatus(test.Dir, StatusPass)
+			reporter.DeleteErrorReport(test.Dir)
+			fmt.Println(reporter.FormatProgress(index, total, test.Name, "PASS", attempts, duration))
+			result.Passed++
+		} else {
+			WriteStatus(test.Dir, StatusFail)
+			fmt.Println(reporter.FormatProgress(index, total, test.Name, "FAIL", attempts, duration))
+			result.Failed++
+		}
+	}
+
+	fmt.Println(reporter.FormatSummary(result.Passed, result.Failed))
+	return result
+}
+
+func runSingleTest(cfg RunConfig, test TestSpec) (passed bool, attempts int, duration time.Duration) {
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
+	defer cancel()
+
+	var history []reporter.AttemptRecord
+	var lastTestResult executor.ExecResult
+	var lastClaudeResult executor.ExecResult
+	prevOutput := ""
+
+	for attempts = 1; attempts <= cfg.MaxAttempts; attempts++ {
+		elapsed := time.Since(start)
+		if elapsed >= cfg.Timeout {
+			break
+		}
+
+		prompt := executor.BuildPrompt(test.Spec, test.TestCmd, prevOutput)
+		lastClaudeResult = executor.RunClaude(ctx, cfg.ClaudeCmd, prompt, cfg.ProjectDir)
+
+		lastTestResult = executor.RunTestCmd(ctx, test.TestCmd, cfg.ProjectDir)
+
+		if lastTestResult.ExitCode == 0 {
+			return true, attempts, time.Since(start)
+		}
+
+		history = append(history, reporter.AttemptRecord{
+			Number:     attempts,
+			TestOutput: lastTestResult.Output,
+		})
+
+		prevOutput = lastTestResult.Output
+	}
+
+	// Exhausted retries — write error report
+	report := reporter.ErrorReport{
+		TestName:     test.Name,
+		Attempts:     attempts - 1,
+		Duration:     time.Since(start),
+		LastExitCode: lastTestResult.ExitCode,
+		Spec:         test.Spec,
+		FinalOutput:  lastTestResult.Output,
+		ClaudeOutput: lastClaudeResult.Output,
+		History:      history,
+	}
+	reporter.WriteErrorReport(test.Dir, report)
+
+	return false, attempts - 1, time.Since(start)
 }
