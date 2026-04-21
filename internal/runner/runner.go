@@ -66,3 +66,38 @@ func DiscoverTests(testDir string) ([]TestSpec, error) {
 
 	return tests, nil
 }
+
+type Status string
+
+const (
+	StatusPending    Status = ""
+	StatusPass       Status = "pass"
+	StatusFail       Status = "fail"
+	StatusInProgress Status = "in_progress"
+)
+
+func ReadStatus(testDir string) (Status, error) {
+	data, err := os.ReadFile(filepath.Join(testDir, ".status"))
+	if os.IsNotExist(err) {
+		return StatusPending, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading status: %w", err)
+	}
+	return Status(strings.TrimSpace(string(data))), nil
+}
+
+func WriteStatus(testDir string, status Status) error {
+	return os.WriteFile(filepath.Join(testDir, ".status"), []byte(string(status)+"\n"), 0o644)
+}
+
+func ShouldRun(status Status, retryFailed bool) bool {
+	switch status {
+	case StatusPending:
+		return true
+	case StatusFail:
+		return retryFailed
+	default:
+		return false
+	}
+}

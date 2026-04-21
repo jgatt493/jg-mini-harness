@@ -42,3 +42,49 @@ func TestDiscoverTests(t *testing.T) {
 		t.Errorf("expected alpha, beta; got %s, %s", tests[0].Name, tests[1].Name)
 	}
 }
+
+func TestReadStatus(t *testing.T) {
+	dir := t.TempDir()
+
+	// No .status file → pending
+	status, err := ReadStatus(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != StatusPending {
+		t.Errorf("expected pending, got %s", status)
+	}
+
+	// Write pass status
+	if err := WriteStatus(dir, StatusPass); err != nil {
+		t.Fatal(err)
+	}
+	status, err = ReadStatus(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != StatusPass {
+		t.Errorf("expected pass, got %s", status)
+	}
+}
+
+func TestShouldRun(t *testing.T) {
+	tests := []struct {
+		status     Status
+		retryFail  bool
+		shouldRun  bool
+	}{
+		{StatusPending, false, true},
+		{StatusPass, false, false},
+		{StatusFail, false, false},
+		{StatusFail, true, true},
+		{StatusInProgress, false, false},
+	}
+	for _, tt := range tests {
+		got := ShouldRun(tt.status, tt.retryFail)
+		if got != tt.shouldRun {
+			t.Errorf("ShouldRun(%s, retryFailed=%v) = %v, want %v",
+				tt.status, tt.retryFail, got, tt.shouldRun)
+		}
+	}
+}
