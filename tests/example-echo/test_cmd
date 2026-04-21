@@ -1,0 +1,1 @@
+grep -q "hello world" output.txt
