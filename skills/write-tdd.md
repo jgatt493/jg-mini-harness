@@ -7,6 +7,30 @@ description: Use when the user wants to create, edit, or manage TDD test specifi
 
 Generate test specifications for the mini TDD harness. Each test is a directory under `TDD/` containing `spec.md` (requirement) and `test_cmd` (verification command).
 
+## Harness Setup
+
+Before writing tests, verify the harness is available. Run `which harness` via Bash.
+
+**If `harness` is not found**, tell the user and offer to install it:
+
+```bash
+# Requires Go installed
+git clone https://github.com/jgatt493/jg-mini-harness.git /tmp/jg-mini-harness
+cd /tmp/jg-mini-harness && go build -o harness ./cmd/harness
+cp /tmp/jg-mini-harness/harness /usr/local/bin/harness
+rm -rf /tmp/jg-mini-harness
+```
+
+Present these commands to the user and let them run it. Do NOT execute the install yourself — the user handles setup.
+
+**If `harness` is found**, proceed directly to writing tests.
+
+After tests are generated, remind the user how to run:
+```bash
+harness run                    # from project root, scans ./TDD
+harness run --retry-failed     # re-run failed tests
+```
+
 ## When to Use
 
 - User asks to write TDD tests or test specs
@@ -18,6 +42,9 @@ Generate test specifications for the mini TDD harness. Each test is a directory 
 
 ```dot
 digraph write_tdd {
+    "Check harness installed" [shape=box];
+    "Harness found?" [shape=diamond];
+    "Offer install commands" [shape=box];
     "Detect mode from user input" [shape=diamond];
     "Exploratory: Read project, propose test areas" [shape=box];
     "Directed: Read relevant code, propose tests" [shape=box];
@@ -26,28 +53,33 @@ digraph write_tdd {
     "User approves?" [shape=diamond];
     "Generate TDD dirs" [shape=box];
     "More tests or refinements?" [shape=diamond];
-    "Done" [shape=doublecircle];
+    "Done — remind how to run harness" [shape=doublecircle];
 
+    "Check harness installed" -> "Harness found?";
+    "Harness found?" -> "Detect mode from user input" [label="yes"];
+    "Harness found?" -> "Offer install commands" [label="no"];
+    "Offer install commands" -> "Detect mode from user input" [label="user installs"];
     "Detect mode from user input" -> "Exploratory: Read project, propose test areas" [label="vague/open"];
     "Detect mode from user input" -> "Directed: Read relevant code, propose tests" [label="specific area"];
     "Detect mode from user input" -> "Bulk: Parse list, propose names + splits" [label="list provided"];
     "Exploratory: Read project, propose test areas" -> "Present numbered test list for approval";
     "Directed: Read relevant code, propose tests" -> "Present numbered test list for approval";
     "Bulk: Parse list, propose names + splits" -> "Present numbered test list for approval";
-    "Present numbered test list for approval" -> "User approves?" ;
+    "Present numbered test list for approval" -> "User approves?";
     "User approves?" -> "Present numbered test list for approval" [label="edit list"];
     "User approves?" -> "Generate TDD dirs" [label="yes"];
     "Generate TDD dirs" -> "More tests or refinements?";
     "More tests or refinements?" -> "Detect mode from user input" [label="yes"];
-    "More tests or refinements?" -> "Done" [label="no"];
+    "More tests or refinements?" -> "Done — remind how to run harness" [label="no"];
 }
 ```
 
 ## Before Starting
 
-1. **Read the project** — understand tech stack, directory structure, existing code
-2. **Check existing TDD/** — read any existing `spec.md` files to avoid duplicates
-3. **Identify test runner** — determine the right verification commands for this project
+1. **Check harness** — `which harness` to verify it's installed
+2. **Read the project** — understand tech stack, directory structure, existing code
+3. **Check existing TDD/** — read any existing `spec.md` files to avoid duplicates
+4. **Identify test runner** — determine the right verification commands for this project
 
 ## Detecting Mode
 
@@ -145,7 +177,7 @@ go test ./src/routes/ -run TestLoginSuccess
 | Node/TS | `npx vitest run --reporter=verbose tests/file.test.ts` |
 | Python | `pytest tests/test_file.py::test_name -v` |
 | Generic file check | `sh -c "test -f path && grep -q 'pattern' path"` |
-| Generic HTTP | `sh -c "curl -sf http://localhost:3000/endpoint | grep -q 'expected'"` |
+| Generic HTTP | `sh -c "curl -sf http://localhost:3000/endpoint \| grep -q 'expected'"` |
 
 Read the project to pick the right pattern. If the project already has a test framework configured, use it.
 
