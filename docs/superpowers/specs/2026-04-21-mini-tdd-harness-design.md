@@ -45,7 +45,7 @@ tests/
 
 **Required files per test:**
 - `spec.md` — the requirement/prompt. Freeform markdown describing what to build.
-- `test_cmd` — a single-line shell command (or executable script) that verifies the implementation. Exit code 0 means pass, non-zero means fail.
+- `test_cmd` — a file whose first line is read and executed via `sh -c "<contents>"`. Exit code 0 means pass, non-zero means fail.
 
 **Harness-managed files per test:**
 - `.status` — tracks test state. Values: `pass`, `fail`, `in_progress`. Absence means pending.
@@ -58,7 +58,7 @@ scan test directory for subdirectories
 sort alphabetically
 for each test dir:
   if .status exists and is "pass" → skip
-  if .status exists and is "fail" → skip
+  if .status exists and is "fail" → skip (unless --retry-failed)
   if .status exists and is "in_progress" → skip (stale from crashed run)
 
   write .status = "in_progress"
@@ -100,10 +100,10 @@ print summary: X/Y passed, Z failed
 
 ## Claude Invocation
 
-The harness shells out to the `claude` CLI using `-p` (prompt mode, non-interactive):
+The harness shells out to the `claude` CLI using `-p` (prompt mode, non-interactive) with `--dangerously-skip-permissions` for fully autonomous execution:
 
 ```bash
-claude -p "Here is the spec:
+claude -p --dangerously-skip-permissions "Here is the spec:
 
 {contents of spec.md}
 
@@ -112,12 +112,18 @@ The test command to verify your implementation is:
 
 {if retry: The previous attempt failed with this output:
 {previous test output}
+
+Note: files from the previous attempt are still on disk. Read them to understand what was already tried before making changes.
 }
 
 Write the implementation code to make the test pass. The test command will be run from the project root directory."
 ```
 
 The working directory for both `claude` and `test_cmd` is `--project-dir` (defaults to the current directory). This ensures Claude writes files in the actual project, not inside the test directory.
+
+**Retry context:** On retries, Claude receives the spec, the test command, and the previous failure output. Claude does NOT receive its own previous response, but the files it wrote in previous attempts are still on disk. The prompt instructs Claude to read existing files to understand prior work. This avoids bloating the prompt while giving Claude full context via the filesystem.
+
+**Claude output capture:** The harness captures Claude's stdout/stderr from each `claude -p` invocation. On failure, Claude's output from the last attempt is included in `error.md` for debugging.
 
 ## CLI Interface
 
@@ -141,6 +147,7 @@ harness run ./tests \
 | `--timeout` | `5m` | Max wall-clock time per test (Go duration format) |
 | `--project-dir` | `.` | Working directory for claude and test commands |
 | `--claude-cmd` | `claude` | Path to the claude CLI binary |
+| `--retry-failed` | `false` | Re-run tests with `.status = fail` |
 
 ## Terminal Output
 
@@ -172,6 +179,9 @@ On failure, `error.md` is written inside the test directory:
 ## Final Test Output
 <stdout + stderr from the last test_cmd run>
 
+## Claude Output (Last Attempt)
+<stdout + stderr from the last claude -p invocation>
+
 ## Attempt History
 ### Attempt 1
 <test output>
@@ -198,6 +208,7 @@ The `.status` file is a plain text file containing a single word:
 **Re-queuing tests:**
 - Delete a single test's `.status` file to re-queue it
 - `find tests -name .status -delete` to re-queue everything
+- Use `--retry-failed` flag to re-run all failed tests without manual file deletion
 - Extensible: future statuses can be added without changing the file format
 
 **Stale `in_progress`:** If the harness crashes mid-run, tests marked `in_progress` will be skipped on restart. The user must manually delete the `.status` file to re-queue. This is intentional — avoids re-running partially completed work that may have side effects.
