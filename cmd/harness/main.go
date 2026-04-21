@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jeremygatt/jg-mini-harness/internal/runner"
@@ -11,7 +12,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 || os.Args[1] != "run" {
-		fmt.Fprintf(os.Stderr, "Usage: harness run <test-dir> [flags]\n")
+		fmt.Fprintf(os.Stderr, "Usage: harness run [test-dir] [flags] (default: ./TDD)\n")
 		os.Exit(1)
 	}
 
@@ -26,14 +27,13 @@ func main() {
 	// Parse everything after "run"
 	args := os.Args[2:]
 
-	// Extract positional arg (test dir) before flags
-	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "Usage: harness run <test-dir> [flags]\n")
-		os.Exit(1)
+	// Extract optional positional arg (test dir), default to ./TDD
+	testDir := "./TDD"
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		testDir = args[0]
+		args = args[1:]
 	}
-
-	testDir := args[0]
-	runCmd.Parse(args[1:])
+	runCmd.Parse(args)
 
 	cfg := runner.RunConfig{
 		TestDir:     testDir,
