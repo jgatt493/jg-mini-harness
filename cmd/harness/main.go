@@ -10,7 +10,7 @@ import (
 	"github.com/jeremygatt/jg-mini-harness/internal/runner"
 )
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 func main() {
 	if len(os.Args) < 2 {

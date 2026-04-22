@@ -1,4 +1,4 @@
-harness
+/harness
 TDD/**/.status
 TDD/**/error.md
 output.txt
