@@ -10,9 +10,22 @@ import (
 	"github.com/jeremygatt/jg-mini-harness/internal/runner"
 )
 
+const Version = "0.1.0"
+
 func main() {
-	if len(os.Args) < 2 || os.Args[1] != "run" {
-		fmt.Fprintf(os.Stderr, "Usage: harness run [test-dir] [flags] (default: ./TDD)\n")
+	if len(os.Args) < 2 {
+		fmt.Fprintf(os.Stderr, "Usage: harness <command>\n\nCommands:\n  run       Run TDD test specs\n  version   Print version\n")
+		os.Exit(1)
+	}
+
+	switch os.Args[1] {
+	case "version", "--version", "-v":
+		fmt.Printf("jg-mini-harness v%s\n", Version)
+		return
+	case "run":
+		// existing run logic
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\nUsage: harness <command>\n\nCommands:\n  run       Run TDD test specs\n  version   Print version\n", os.Args[1])
 		os.Exit(1)
 	}
 
