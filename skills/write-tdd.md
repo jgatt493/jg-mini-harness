@@ -9,21 +9,34 @@ Generate test specifications for the mini TDD harness. Each test is a directory 
 
 ## Harness Setup
 
-Before writing tests, verify the harness is available. Run `which harness` via Bash.
-
-**If `harness` is not found**, tell the user and offer to install it:
+Before writing tests, verify the correct harness is installed. Run via Bash:
 
 ```bash
-# Requires Go installed
+if command -v harness &>/dev/null && harness version 2>&1 | grep -q "jg-mini-harness"; then
+  harness version
+else
+  echo "NOT_INSTALLED"
+fi
+```
+
+**If output is `NOT_INSTALLED`** (or harness is missing, or version doesn't match), tell the user the mini TDD harness needs to be installed and offer:
+
+```bash
+# One-liner install (requires Go)
+curl -fsSL https://raw.githubusercontent.com/jgatt493/jg-mini-harness/master/install.sh | bash
+```
+
+Or manual install:
+```bash
 git clone https://github.com/jgatt493/jg-mini-harness.git /tmp/jg-mini-harness
 cd /tmp/jg-mini-harness && go build -o harness ./cmd/harness
-cp /tmp/jg-mini-harness/harness /usr/local/bin/harness
+cp /tmp/jg-mini-harness/harness ~/.local/bin/harness
 rm -rf /tmp/jg-mini-harness
 ```
 
 Present these commands to the user and let them run it. Do NOT execute the install yourself — the user handles setup.
 
-**If `harness` is found**, proceed directly to writing tests.
+**If output shows `jg-mini-harness v...`**, proceed directly to writing tests.
 
 After tests are generated, remind the user how to run:
 ```bash
