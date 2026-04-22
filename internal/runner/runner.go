@@ -122,14 +122,48 @@ type RunResult struct {
 }
 
 func Run(cfg RunConfig) RunResult {
+	fmt.Printf("Scanning %s for tests...\n", cfg.TestDir)
+
 	tests, err := DiscoverTests(cfg.TestDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error discovering tests: %v\n", err)
 		return RunResult{}
 	}
 
+	// Tally statuses
+	var pending, passed, failed, inProgress int
+	for _, test := range tests {
+		status, _ := ReadStatus(test.Dir)
+		switch status {
+		case StatusPending:
+			pending++
+		case StatusPass:
+			passed++
+		case StatusFail:
+			if cfg.RetryFailed {
+				pending++
+			} else {
+				failed++
+			}
+		case StatusInProgress:
+			inProgress++
+		}
+	}
+
+	fmt.Printf("Found %d tests: %d pending, %d passed, %d failed", len(tests), pending, passed, failed)
+	if inProgress > 0 {
+		fmt.Printf(", %d in_progress (stale)", inProgress)
+	}
+	fmt.Println()
+
+	if pending == 0 {
+		fmt.Println("Nothing to run.")
+		return RunResult{}
+	}
+
+	fmt.Printf("\nStarting test run (%d to process)...\n\n", pending)
+
 	var result RunResult
-	total := len(tests)
 	index := 0
 
 	for _, test := range tests {
@@ -144,6 +178,7 @@ func Run(cfg RunConfig) RunResult {
 		}
 
 		index++
+		fmt.Printf("[%d/%d] %s... ", index, pending, test.Name)
 		WriteStatus(test.Dir, StatusInProgress)
 
 		passed, attempts, duration := runSingleTest(cfg, test)
@@ -151,11 +186,11 @@ func Run(cfg RunConfig) RunResult {
 		if passed {
 			WriteStatus(test.Dir, StatusPass)
 			reporter.DeleteErrorReport(test.Dir)
-			fmt.Println(reporter.FormatProgress(index, total, test.Name, "PASS", attempts, duration))
+			fmt.Printf("PASS (%d attempts, %s)\n", attempts, duration.Round(time.Second))
 			result.Passed++
 		} else {
 			WriteStatus(test.Dir, StatusFail)
-			fmt.Println(reporter.FormatProgress(index, total, test.Name, "FAIL", attempts, duration))
+			fmt.Printf("FAIL (%d attempts, %s) → error.md written\n", attempts, duration.Round(time.Second))
 			result.Failed++
 		}
 	}
